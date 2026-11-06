@@ -1,0 +1,17 @@
+# Ambientes virtuales
+venv/
+env/
+.venv/
+
+# Secretos y configuracion local
+.streamlit/secrets.toml
+
+# Bases de datos y modelos pesados
+data/
+models/
+*.csv
+*.pkl
+
+# Archivos de cache de Python
+__pycache__/
+*.pyc
