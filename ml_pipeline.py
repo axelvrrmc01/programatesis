@@ -68,4 +68,4 @@ def entrenar_y_predecir(df):
     # Renombrar descripción
     futuro = futuro.rename(columns={'descripcion': 'Producto'})
     
-    return futuro[['Mes', 'Producto', 'Cantidad Proyectada']]
+    return futuro[['mes', 'Producto', 'Cantidad Proyectada']]
