@@ -85,23 +85,19 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
     with tab3:
         df_eval = st.session_state['df_evaluacion']
         
-        # --- NUEVA SECCIÓN: RANKING GLOBAL ---
         st.subheader("🏆 Ranking de Mejor Precisión Predictiva")
         st.markdown("Lista de productos donde el modelo logró el menor margen de error (ordenados por WAPE).")
         
         df_ranking = obtener_resumen_metricas(df_eval)
         
-        # Input simple para decidir cuántos mejores productos mostrar
         top_ranking_str = st.text_input("Cantidad de mejores productos a mostrar", value="10")
         top_ranking_n = int(top_ranking_str) if top_ranking_str.isdigit() else 10
         
         st.dataframe(df_ranking.head(top_ranking_n), hide_index=True, use_container_width=True)
         
-        st.divider() # Línea separadora visual
+        st.divider() 
         
-        # --- SECCIÓN ORIGINAL: EVALUACIÓN INDIVIDUAL ---
-        st.subheader("Evaluación Detallada por Producto (Periodo 2024-2025)")
-        
+        # --- SECCIÓN INDIVIDUAL (Sin encabezados) ---
         lista_productos_eval = sorted(df_eval['Producto'].unique().tolist())
         prod_evaluacion = st.selectbox("Selecciona un Producto", options=lista_productos_eval, key="select_resultados")
         
@@ -115,7 +111,6 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
         
         st.line_chart(datos_grafica, use_container_width=True)
         
-        st.markdown("### Precisión del Pronóstico (CRISP-ML)")
         mae, rmse, wape = calcular_metricas_tesis(df_prod['Cantidad Real'], df_prod['Cantidad Proyectada'])
         
         m1, m2, m3 = st.columns(3)
