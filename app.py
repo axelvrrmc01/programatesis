@@ -102,8 +102,8 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
         # Preparar datos para la gráfica (Eje X: Mes, Eje Y: Cantidades)
         datos_grafica = df_prod[['Mes', 'Cantidad Real', 'Cantidad Proyectada']].set_index('Mes')
         
-        # Gráfica de barras comparativas
-        st.bar_chart(datos_grafica, use_container_width=True)
+        # Gráfica de líneas comparativas (puntos unidos por líneas)
+        st.line_chart(datos_grafica, use_container_width=True)
         
         # Cálculo y visualización de indicadores (Variables Dependientes de la Tesis)
         st.markdown("### Precisión del Pronóstico (CRISP-ML)")
