@@ -1,89 +1,115 @@
+import streamlit as st
 import pandas as pd
-import numpy as np
-from xgboost import XGBRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+import re
+from database import iniciar_conexion, subir_csv_a_bucket, cargar_csv_desde_bucket
+from ml_pipeline import obtener_top_3_por_mes, entrenar_y_predecir, obtener_evaluacion_historica, calcular_metricas_tesis
 
-def preparar_datos_historicos(df):
-    df['fecha_y_hora_de_pedido'] = pd.to_datetime(df['fecha_y_hora_de_pedido'])
-    df['mes_año'] = df['fecha_y_hora_de_pedido'].dt.to_period('M')
-    df['mes'] = df['fecha_y_hora_de_pedido'].dt.month
-    return df
+st.set_page_config(page_title="Predicción de Inventarios", layout="wide")
 
-def formatear_mes_anio(periodo_str):
-    meses = {
-        '01':'Enero', '02':'Febrero', '03':'Marzo', '04':'Abril', 
-        '05':'Mayo', '06':'Junio', '07':'Julio', '08':'Agosto', 
-        '09':'Septiembre', '10':'Octubre', '11':'Noviembre', '12':'Diciembre'
-    }
-    año, mes = periodo_str.split('-')
-    return f"{meses[mes]} {año}"
+supabase = iniciar_conexion()
+BUCKET_NAME = "archivos-tesis" 
 
-def obtener_top_3_por_mes(df):
-    df = preparar_datos_historicos(df)
-    
-    df_mensual = df.groupby(['mes_año', 'descripcion'])['cantidad'].sum().reset_index()
-    df_ordenado = df_mensual.sort_values(['mes_año', 'cantidad'], ascending=[True, False])
-    top_3 = df_ordenado.groupby('mes_año').head(3).copy()
-    
-    top_3['mes_año'] = top_3['mes_año'].astype(str)
-    top_3['Periodo'] = top_3['mes_año'].apply(formatear_mes_anio)
-    top_3 = top_3.rename(columns={'descripcion': 'Producto', 'cantidad': 'Cantidad'})
-    
-    return top_3[['Periodo', 'Producto', 'Cantidad']]
+st.title("📦 Sistema Predictivo de Inventarios")
 
-def entrenar_y_predecir(df):
-    df = preparar_datos_historicos(df)
-    
-    df_hist = df.groupby(['codigo_de_producto', 'descripcion', 'mes'])['cantidad'].sum().reset_index()
-    media_ventas = df.groupby('codigo_de_producto')['cantidad'].mean().reset_index()
-    media_ventas.rename(columns={'cantidad': 'media_historica'}, inplace=True)
-    
-    df_ml = pd.merge(df_hist, media_ventas, on='codigo_de_producto')
-    X = df_ml[['mes', 'media_historica']]
-    y = df_ml['cantidad']
-    
-    modelo = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-    modelo.fit(X, y)
-    
-    productos_unicos = df[['codigo_de_producto', 'descripcion']].drop_duplicates()
-    meses_futuros = list(range(1, 13))
-    
-    futuro = productos_unicos.assign(key=1).merge(pd.DataFrame({'mes': meses_futuros, 'key': 1}), on='key').drop('key', axis=1)
-    futuro = pd.merge(futuro, media_ventas, on='codigo_de_producto', how='left').fillna(0)
-    
-    X_futuro = futuro[['mes', 'media_historica']]
-    futuro['Cantidad Proyectada'] = modelo.predict(X_futuro)
-    futuro['Cantidad Proyectada'] = futuro['Cantidad Proyectada'].clip(lower=0).round().astype(int)
-    futuro = futuro.rename(columns={'descripcion': 'Producto'})
-    
-    return futuro[['mes', 'Producto', 'Cantidad Proyectada']]
+archivos_subidos = st.file_uploader("Sube tus archivos transaccionales (CSV)", type=["csv"], accept_multiple_files=True)
 
-def obtener_evaluacion_historica(df):
-    """Genera predicciones sobre la misma data histórica para comparar real vs proyectado"""
-    df = preparar_datos_historicos(df)
-    df_hist = df.groupby(['codigo_de_producto', 'descripcion', 'mes'])['cantidad'].sum().reset_index()
-    media_ventas = df.groupby('codigo_de_producto')['cantidad'].mean().reset_index()
-    media_ventas.rename(columns={'cantidad': 'media_historica'}, inplace=True)
-    
-    df_ml = pd.merge(df_hist, media_ventas, on='codigo_de_producto')
-    X = df_ml[['mes', 'media_historica']]
-    y = df_ml['cantidad']
-    
-    modelo = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-    modelo.fit(X, y)
-    
-    df_ml['Cantidad Proyectada'] = modelo.predict(X)
-    df_ml['Cantidad Proyectada'] = df_ml['Cantidad Proyectada'].clip(lower=0).round().astype(int)
-    df_ml = df_ml.rename(columns={'descripcion': 'Producto', 'cantidad': 'Cantidad Real'})
-    
-    return df_ml[['mes', 'Producto', 'Cantidad Real', 'Cantidad Proyectada']]
+if archivos_subidos:
+    if st.button("Procesar y Analizar"):
+        with st.spinner("Subiendo archivos a Supabase y consolidando datos..."):
+            lista_dataframes = [] 
+            
+            for archivo in archivos_subidos:
+                bytes_data = archivo.getvalue()
+                nombre_original = archivo.name
+                
+                nombre_seguro = re.sub(r'[^a-zA-Z0-9_.-]', '_', nombre_original)
+                exito, msj, nombre_almacenado = subir_csv_a_bucket(supabase, BUCKET_NAME, bytes_data, nombre_original)
+                
+                if exito:
+                    df_temp = cargar_csv_desde_bucket(supabase, BUCKET_NAME, nombre_almacenado)
+                    if df_temp is not None:
+                        lista_dataframes.append(df_temp)
+                else:
+                    st.error(f"Error al subir {nombre_original}: {msj}")
+            
+            if len(lista_dataframes) > 0:
+                st.success(f"{len(lista_dataframes)} archivo(s) sincronizado(s) en la nube. Modelo entrenado con éxito.")
+                
+                df_consolidado = pd.concat(lista_dataframes, ignore_index=True)
+                
+                st.session_state['df_historico'] = obtener_top_3_por_mes(df_consolidado)
+                st.session_state['df_predicciones'] = entrenar_y_predecir(df_consolidado)
+                st.session_state['df_evaluacion'] = obtener_evaluacion_historica(df_consolidado)
 
-def calcular_metricas_tesis(y_real, y_pred):
-    """Calcula los indicadores MAE, RMSE y WAPE definidos en la matriz de consistencia"""
-    if len(y_real) == 0:
-        return 0, 0, 0
-    mae = mean_absolute_error(y_real, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_real, y_pred))
-    suma_real = np.sum(y_real)
-    wape = np.sum(np.abs(y_real - y_pred)) / suma_real if suma_real > 0 else 0
-    return round(mae, 2), round(rmse, 2), round(wape, 4)
+if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
+    
+    # Se añade la tercera pestaña "Resultados"
+    tab1, tab2, tab3 = st.tabs(["Análisis Histórico", "Proyecciones", "Resultados"])
+    
+    with tab1:
+        st.subheader("Top 3 Productos de mayor rotación por Mes")
+        st.dataframe(st.session_state['df_historico'], hide_index=True, use_container_width=True)
+        
+    with tab2:
+        df_pred = st.session_state['df_predicciones']
+        col_anio, col_mes, col_top = st.columns(3)
+        
+        anio_str = col_anio.text_input("Año de Proyección", value="2027")
+        anio_objetivo = int(anio_str) if anio_str.isdigit() else 2027
+        
+        meses_dict = {3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
+                      7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+        
+        mes_nombre = col_mes.selectbox("Mes a evaluar", options=list(meses_dict.values()))
+        mes_numero = [k for k, v in meses_dict.items() if v == mes_nombre][0]
+        
+        top_str = col_top.text_input("Cantidad de productos a visualizar", value="20")
+        top_n = int(top_str) if top_str.isdigit() else 20
+        
+        todos_los_productos = ["Todos"] + sorted(df_pred['Producto'].unique().tolist())
+        producto_filtro = st.selectbox("O buscar proyección de un producto específico", options=todos_los_productos)
+        
+        df_filtrado = df_pred[df_pred['mes'] == mes_numero].copy()
+        
+        if producto_filtro != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['Producto'] == producto_filtro]
+        else:
+            df_filtrado = df_filtrado.sort_values(by='Cantidad Proyectada', ascending=False).head(top_n)
+        
+        df_mostrar = df_filtrado[['Producto', 'Cantidad Proyectada']]
+        
+        st.subheader(f"Predicción Productos {anio_objetivo}")
+        st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
+        
+    # ---------------- PESTAÑA 3: RESULTADOS TESIS ----------------
+    with tab3:
+        df_eval = st.session_state['df_evaluacion']
+        
+        st.subheader("Evaluación del Modelo XGBoost (Periodo 2024-2025)")
+        
+        # Filtro por producto individual
+        lista_productos_eval = sorted(df_eval['Producto'].unique().tolist())
+        prod_evaluacion = st.selectbox("Producto", options=lista_productos_eval, key="select_resultados")
+        
+        # Filtrar datos del producto seleccionado
+        df_prod = df_eval[df_eval['Producto'] == prod_evaluacion].sort_values('mes').copy()
+        
+        # Mapear los números de mes a sus nombres en texto
+        meses_nombres = {3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
+                         7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+        df_prod['Mes'] = df_prod['mes'].map(meses_nombres)
+        
+        # Preparar datos para la gráfica (Eje X: Mes, Eje Y: Cantidades)
+        datos_grafica = df_prod[['Mes', 'Cantidad Real', 'Cantidad Proyectada']].set_index('Mes')
+        
+        # Gráfica de barras comparativas
+        st.bar_chart(datos_grafica, use_container_width=True)
+        
+        # Cálculo y visualización de indicadores (Variables Dependientes de la Tesis)
+        st.markdown("### Precisión del Pronóstico (CRISP-ML)")
+        mae, rmse, wape = calcular_metricas_tesis(df_prod['Cantidad Real'], df_prod['Cantidad Proyectada'])
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric(label="MAE (Error Absoluto Medio)", value=mae)
+        m2.metric(label="RMSE (Raíz del Error Cuadrático Medio)", value=rmse)
+        m3.metric(label="WAPE (Error Porcentual Ponderado)", value=f"{wape * 100:.2f} %")
