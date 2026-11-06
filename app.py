@@ -4,13 +4,14 @@ import re
 from database import iniciar_conexion, subir_csv_a_bucket, cargar_csv_desde_bucket
 from ml_pipeline import obtener_top_3_por_mes, entrenar_y_predecir
 
-st.set_page_config(page_title="Predicción de Inventarios PYME", layout="wide")
+# Actualización de título de pestaña
+st.set_page_config(page_title="Predicción de Inventarios", layout="wide")
 
 supabase = iniciar_conexion()
 BUCKET_NAME = "archivos-tesis" 
 
-st.title("📦 Sistema Predictivo de Inventarios PYME")
-st.markdown("Basado en el marco de trabajo **CRISP-ML(Q)** para optimización de la cadena de suministro retail.")
+# 1. Título principal actualizado y subtítulo eliminado
+st.title("📦 Sistema Predictivo de Inventarios")
 
 archivos_subidos = st.file_uploader("Sube tus archivos transaccionales (CSV)", type=["csv"], accept_multiple_files=True)
 
@@ -36,47 +37,43 @@ if archivos_subidos:
             if len(lista_dataframes) > 0:
                 st.success(f"{len(lista_dataframes)} archivo(s) sincronizado(s) en la nube. Modelo entrenado con éxito.")
                 
-                # Consolidar datos
                 df_consolidado = pd.concat(lista_dataframes, ignore_index=True)
                 
-                # Generar DataFrames base
                 st.session_state['df_historico'] = obtener_top_3_por_mes(df_consolidado)
                 st.session_state['df_predicciones'] = entrenar_y_predecir(df_consolidado)
 
-# Mostrar la interfaz si los datos ya fueron procesados y están en memoria
 if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
     
-    # Crear las dos pestañas solicitadas
-    tab1, tab2 = st.tabs(["Análisis Histórico", "Predicciones Machine Learning"])
+    # 2. Nombre de la pestaña actualizado a "Proyecciones"
+    tab1, tab2 = st.tabs(["Análisis Histórico", "Proyecciones"])
     
-    # ---------------- PESTAÑA 1 ----------------
     with tab1:
         st.subheader("Top 3 Productos de mayor rotación por Mes")
-        # El parámetro hide_index=True elimina la fila de números a la izquierda
         st.dataframe(st.session_state['df_historico'], hide_index=True, use_container_width=True)
         
-    # ---------------- PESTAÑA 2 ----------------
     with tab2:
         df_pred = st.session_state['df_predicciones']
         
-        # Filtros interactivos en 3 columnas
         col_anio, col_mes, col_top = st.columns(3)
         
-        anio_objetivo = col_anio.number_input("Año para la predicción", min_value=2025, max_value=2035, value=2027)
+        # 3. y 5. Entrada de texto para el Año (elimina botones + y -) y cambio de nombre
+        anio_str = col_anio.text_input("Año de Proyección", value="2027")
+        anio_objetivo = int(anio_str) if anio_str.isdigit() else 2027
         
-        meses_dict = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
+        # 4. Diccionario de meses (Enero y Febrero eliminados)
+        meses_dict = {3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
                       7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
         
         mes_nombre = col_mes.selectbox("Mes a evaluar", options=list(meses_dict.values()))
         mes_numero = [k for k, v in meses_dict.items() if v == mes_nombre][0]
         
-        top_n = col_top.number_input("Cantidad de productos a visualizar", min_value=1, max_value=100, value=20)
+        # 5. Entrada de texto para la Cantidad (elimina botones + y -)
+        top_str = col_top.text_input("Cantidad de productos a visualizar", value="20")
+        top_n = int(top_str) if top_str.isdigit() else 20
         
-        # Búsqueda específica por producto
         todos_los_productos = ["Todos"] + sorted(df_pred['Producto'].unique().tolist())
         producto_filtro = st.selectbox("O buscar proyección de un producto específico", options=todos_los_productos)
         
-        # Lógica de filtrado
         df_filtrado = df_pred[df_pred['mes'] == mes_numero].copy()
         
         if producto_filtro != "Todos":
@@ -84,7 +81,6 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
         else:
             df_filtrado = df_filtrado.sort_values(by='Cantidad Proyectada', ascending=False).head(top_n)
         
-        # Eliminar la columna mes (ya no es necesaria) y estructurar vista final
         df_mostrar = df_filtrado[['Producto', 'Cantidad Proyectada']]
         
         st.subheader(f"Predicción Productos {anio_objetivo}")
