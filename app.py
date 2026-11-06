@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from database import iniciar_conexion, subir_csv_a_bucket, cargar_csv_desde_bucket
-from ml_pipeline import obtener_top_3_por_mes, entrenar_y_predecir, obtener_evaluacion_historica, calcular_metricas_tesis
+from ml_pipeline import obtener_top_3_por_mes, entrenar_y_predecir, obtener_evaluacion_historica, calcular_metricas_tesis, obtener_resumen_metricas
 
 st.set_page_config(page_title="Predicción de Inventarios", layout="wide")
 
@@ -85,31 +85,40 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
     with tab3:
         df_eval = st.session_state['df_evaluacion']
         
-        st.subheader("Evaluación del Modelo XGBoost (Periodo 2024-2025)")
+        # --- NUEVA SECCIÓN: RANKING GLOBAL ---
+        st.subheader("🏆 Ranking de Mejor Precisión Predictiva")
+        st.markdown("Lista de productos donde el modelo logró el menor margen de error (ordenados por WAPE).")
         
-        # Filtro por producto individual
+        df_ranking = obtener_resumen_metricas(df_eval)
+        
+        # Input simple para decidir cuántos mejores productos mostrar
+        top_ranking_str = st.text_input("Cantidad de mejores productos a mostrar", value="10")
+        top_ranking_n = int(top_ranking_str) if top_ranking_str.isdigit() else 10
+        
+        st.dataframe(df_ranking.head(top_ranking_n), hide_index=True, use_container_width=True)
+        
+        st.divider() # Línea separadora visual
+        
+        # --- SECCIÓN ORIGINAL: EVALUACIÓN INDIVIDUAL ---
+        st.subheader("Evaluación Detallada por Producto (Periodo 2024-2025)")
+        
         lista_productos_eval = sorted(df_eval['Producto'].unique().tolist())
-        prod_evaluacion = st.selectbox("Producto", options=lista_productos_eval, key="select_resultados")
+        prod_evaluacion = st.selectbox("Selecciona un Producto", options=lista_productos_eval, key="select_resultados")
         
-        # Filtrar datos del producto seleccionado
         df_prod = df_eval[df_eval['Producto'] == prod_evaluacion].sort_values('mes').copy()
         
-        # Mapear los números de mes a sus nombres en texto
         meses_nombres = {3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
                          7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
         df_prod['Mes'] = df_prod['mes'].map(meses_nombres)
         
-        # Preparar datos para la gráfica (Eje X: Mes, Eje Y: Cantidades)
         datos_grafica = df_prod[['Mes', 'Cantidad Real', 'Cantidad Proyectada']].set_index('Mes')
         
-        # Gráfica de líneas comparativas (puntos unidos por líneas)
         st.line_chart(datos_grafica, use_container_width=True)
         
-        # Cálculo y visualización de indicadores (Variables Dependientes de la Tesis)
         st.markdown("### Precisión del Pronóstico (CRISP-ML)")
         mae, rmse, wape = calcular_metricas_tesis(df_prod['Cantidad Real'], df_prod['Cantidad Proyectada'])
         
         m1, m2, m3 = st.columns(3)
         m1.metric(label="MAE (Error Absoluto Medio)", value=mae)
-        m2.metric(label="RMSE (Raíz del Error Cuadrático Medio)", value=rmse)
-        m3.metric(label="WAPE (Error Porcentual Ponderado)", value=f"{wape * 100:.2f} %")
+        m2.metric(label="RMSE (Raíz Error Cuadrático)", value=rmse)
+        m3.metric(label="WAPE (Error Porcentual)", value=f"{wape * 100:.2f} %")
