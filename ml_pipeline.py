@@ -87,3 +87,28 @@ def calcular_metricas_tesis(y_real, y_pred):
     suma_real = np.sum(y_real)
     wape = np.sum(np.abs(y_real - y_pred)) / suma_real if suma_real > 0 else 0
     return round(mae, 2), round(rmse, 2), round(wape, 4)
+def obtener_resumen_metricas(df_eval):
+    """Calcula las métricas para todos los productos y los rankea del menor error al mayor"""
+    resultados = []
+    for producto in df_eval['Producto'].unique():
+        df_prod = df_eval[df_eval['Producto'] == producto]
+        mae, rmse, wape = calcular_metricas_tesis(df_prod['Cantidad Real'], df_prod['Cantidad Proyectada'])
+        
+        # Solo consideramos productos que tuvieron ventas reales (suma > 0) para evitar divisiones falsas
+        if df_prod['Cantidad Real'].sum() > 0:
+            resultados.append({
+                'Producto': producto,
+                'MAE': mae,
+                'RMSE': rmse,
+                'WAPE': wape
+            })
+    
+    df_resumen = pd.DataFrame(resultados)
+    
+    # Ordenamos por WAPE ascendente (menor error = mejor predicción)
+    df_resumen = df_resumen.sort_values(by=['WAPE', 'MAE'], ascending=[True, True])
+    
+    # Formateamos el WAPE como porcentaje visualmente atractivo
+    df_resumen['WAPE'] = (df_resumen['WAPE'] * 100).round(2).astype(str) + ' %'
+    
+    return df_resumen
