@@ -95,25 +95,4 @@ if 'df_historico' in st.session_state and 'df_predicciones' in st.session_state:
         
         st.dataframe(df_ranking.head(top_ranking_n), hide_index=True, use_container_width=True)
         
-        st.divider() 
-        
-        # --- SECCIÓN INDIVIDUAL (Sin encabezados) ---
-        lista_productos_eval = sorted(df_eval['Producto'].unique().tolist())
-        prod_evaluacion = st.selectbox("Selecciona un Producto", options=lista_productos_eval, key="select_resultados")
-        
-        df_prod = df_eval[df_eval['Producto'] == prod_evaluacion].sort_values('mes').copy()
-        
-        meses_nombres = {3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
-                         7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
-        df_prod['Mes'] = df_prod['mes'].map(meses_nombres)
-        
-        datos_grafica = df_prod[['Mes', 'Cantidad Real', 'Cantidad Proyectada']].set_index('Mes')
-        
-        st.line_chart(datos_grafica, use_container_width=True)
-        
-        mae, rmse, wape = calcular_metricas_tesis(df_prod['Cantidad Real'], df_prod['Cantidad Proyectada'])
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric(label="MAE (Error Absoluto Medio)", value=mae)
-        m2.metric(label="RMSE (Raíz Error Cuadrático)", value=rmse)
-        m3.metric(label="WAPE (Error Porcentual)", value=f"{wape * 100:.2f} %")
+        st.divider()
